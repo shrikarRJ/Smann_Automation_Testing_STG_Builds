@@ -187,12 +187,13 @@ def fetch_otp_from_api(phone):
 # ------------------------------------------
 # Desired Capabilities
 # ------------------------------------------
+
 options = AppiumOptions()
 options.load_capabilities({
     "platformName": "Android",
     "appium:automationName": "UiAutomator2",
     "appium:deviceName": "emulator-5554",
-    "appium:app": "C:\\Users\\shrik\\OneDrive\\Desktop\\Smann_TBT\\STG_Smann\\Smann_STG_APK\\STG_Smann.apk",
+    "appium:app": "C:\\Users\\shrik\\OneDrive\\Desktop\\Smann_Automation_Testing_STG_Builds\\Tests\\STG_Smann\\Smann_STG_APK\\STG_Smann.apk",
     "appium:appPackage": "com.tribetayling.customer.staging",
     "appium:appActivity": "com.tribetayling.customer.MainActivity",
 
@@ -200,6 +201,9 @@ options.load_capabilities({
     "appium:noReset": True,
     "appium:newCommandTimeout": 300
 })
+
+# ZA222KCFFQ
+# emulator-5554
 
 # ------------------------------------------
 # Driver Initialization
