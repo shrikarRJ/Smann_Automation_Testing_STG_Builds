@@ -28,7 +28,7 @@ jobs:
 
       - name: Start Appium Server
         run: |
-          appium --log appium.log --log-level info &
+          Start-Process appium -ArgumentList "--log appium.log --log-level info"
 
       - name: Wait for Appium
         run: |
