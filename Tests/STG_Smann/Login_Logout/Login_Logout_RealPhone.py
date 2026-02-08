@@ -18,7 +18,7 @@ import os
 # CONFIG
 # ------------------------------------------
 PHONE_NUMBER = "9021004607"
-DEVICE_UDID = "emulator-5554"
+DEVICE_UDID = "ZA222KCFFQ"
 
 # ZA222KCFFQ
 # emulator-5554
