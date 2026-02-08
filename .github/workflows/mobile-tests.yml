@@ -70,7 +70,7 @@ jobs:
 
       - name: Start Appium Server
         run: |
-          start "" cmd /c appium --log appium.log
+          Start-Process appium -ArgumentList "--log appium.log --log-level info"
 
       - name: Wait for Appium to start
         run: |
