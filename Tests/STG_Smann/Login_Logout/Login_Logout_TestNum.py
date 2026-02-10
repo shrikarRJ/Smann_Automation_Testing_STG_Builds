@@ -147,7 +147,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 import time
-import requests
+# import requests
 
 # ------------------------------------------
 # CONFIG
@@ -192,8 +192,8 @@ options = AppiumOptions()
 options.load_capabilities({
     "platformName": "Android",
     "appium:automationName": "UiAutomator2",
-    "appium:deviceName": "emulator-5554",
-    "appium:app": "C:\\Users\\shrik\\OneDrive\\Desktop\\Smann_Automation_Testing_STG_Builds\\Tests\\STG_Smann\\Smann_STG_APK\\STG_Smann.apk",
+    "appium:deviceName": "ZA222KCFFQ",
+    "appium:app": r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\STG_Smann\Smann_STG_APK\STG_Smann.apk",
     "appium:appPackage": "com.tribetayling.customer.staging",
     "appium:appActivity": "com.tribetayling.customer.MainActivity",
 
