@@ -18,12 +18,13 @@ import os
 # CONFIG
 # ------------------------------------------
 PHONE_NUMBER = "9021004607"
-DEVICE_UDID = "ZA222KCFFQ"
+DEVICE_UDID = "emulator-5554"
 
 # ZA222KCFFQ
 # emulator-5554
 
-APK_PATH = "C:\\Users\\shrik\\OneDrive\\Desktop\\Smann_Automation_Testing_STG_Builds\\Tests\\STG_Smann\\Smann_STG_APK\\STG_Smann.apk"
+# APK_PATH = "C:\\Users\\shrik\\OneDrive\\Desktop\\Smann_Automation_Testing_STG_Builds\\Tests\\STG_Smann\\Smann_STG_APK\\STG_Smann.apk"
+APK_PATH = os.environ.get("APK_PATH", r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\STG_Smann\Smann_STG_APK\STG_Smann.apk")
 APP_PACKAGE = "com.tribetayling.customer.staging"
 APP_ACTIVITY = "com.tribetayling.customer.MainActivity"
 
