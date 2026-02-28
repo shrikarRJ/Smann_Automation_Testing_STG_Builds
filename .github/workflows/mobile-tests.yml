@@ -30,7 +30,7 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Starting Appium Server..."
-          Start-Process -NoNewWindow -FilePath "appium" -ArgumentList "--port 4723 --log-level info" 
+          Start-Process cmd -ArgumentList "/c appium --port 4723 --log-level info" -NoNewWindow
           Start-Sleep -Seconds 5
 
       - name: Wait for Appium to be Ready
