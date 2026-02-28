@@ -38,7 +38,7 @@ jobs:
         run: |
           python Tests/STG_Smann/Login_Logout/Login_Logout_TestNum.py
 
-      - name: Run STG Smann Login Logout Test
+      - name: Run STG Smann Skip Order login Test
         run: |
           python Tests/STG_Smann/Successful_Order/SkipLogin_Order_TN.py
 
