@@ -28,11 +28,18 @@ jobs:
 
       - name: Start Appium Server
         run: |
-          Start-Process appium -ArgumentList "--log appium.log --log-level info"
+          echo Starting Appium...
+          cmd /c start "AppiumServer" appium --address 127.0.0.1 --port 4723 --log appium.log
 
-      - name: Wait for Appium to start
+      - name: Wait for Appium to be Ready
         run: |
-          Start-Sleep -Seconds 10
+          echo Waiting for Appium to open port 4723...
+          for /l %i in (1,1,20) do (
+            netstat -an | find "4723" && exit /b 0
+            timeout /t 1 >nul
+          )
+          echo Appium did not start properly
+          exit /b 1
 
       - name: Run STG Smann Login Logout Test
         run: |
