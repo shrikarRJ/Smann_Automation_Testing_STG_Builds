@@ -207,7 +207,7 @@ try:
     )
     profile_icon.click()
 except TimeoutException:
-    print("ℹ️ Profile icon not found, continuing anyway")
+    print("ℹ️ Profile icon not found, continuing anyway ")
 
 # ------------------------------------------
 # Logout Flow
