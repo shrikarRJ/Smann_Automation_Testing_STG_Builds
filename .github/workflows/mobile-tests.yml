@@ -27,19 +27,38 @@ jobs:
           adb devices
 
       - name: Start Appium Server
+        shell: powershell
         run: |
-          echo Starting Appium...
-          cmd /c start "AppiumServer" appium --address 127.0.0.1 --port 4723 --log appium.log
+          Write-Host "Starting Appium Server..."
+          Start-Process -NoNewWindow -FilePath "appium" -ArgumentList "--port 4723 --log-level info" 
+          Start-Sleep -Seconds 5
 
       - name: Wait for Appium to be Ready
+        shell: powershell
         run: |
-          echo Waiting for Appium to open port 4723...
-          for /l %i in (1,1,20) do (
-            netstat -an | find "4723" && exit /b 0
-            timeout /t 1 >nul
-          )
-          echo Appium did not start properly
-          exit /b 1
+          Write-Host "Waiting for Appium server on port 4723..."
+          $maxAttempts = 20
+          $attempt = 0
+          $ready = $false
+
+          while (-not $ready -and $attempt -lt $maxAttempts) {
+              try {
+                  $response = Invoke-WebRequest -Uri "http://127.0.0.1:4723/status" -UseBasicParsing -TimeoutSec 3
+                  if ($response.StatusCode -eq 200) {
+                      $ready = $true
+                      Write-Host "Appium server is ready."
+                  }
+              } catch {
+                  Write-Host "Appium not ready yet..."
+                  Start-Sleep -Seconds 3
+              }
+              $attempt++
+          }
+
+          if (-not $ready) {
+              Write-Error "Appium server failed to start!"
+              exit 1
+          }
 
       - name: Run STG Smann Login Logout Test
         run: |
