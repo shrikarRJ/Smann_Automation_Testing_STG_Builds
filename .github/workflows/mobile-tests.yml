@@ -34,6 +34,16 @@ jobs:
         run: |
           Start-Sleep -Seconds 10
 
-      - name: Run Login Logout Test
+      - name: Run STG Smann Login Logout Test
         run: |
           python Tests/STG_Smann/Login_Logout/Login_Logout_TestNum.py
+
+      - name: Run STG Smann Login Logout Test
+        run: |
+          python Tests/STG_Smann/Successful_Order/SkipLogin_Order_TN.py
+
+      - name: Run STG Vendor Login Logout Test
+        run: |
+          python Tests/STG_Partner/Vendor_Onboarding_and_login/vendor_Onboarding_TN.py
+
+              
