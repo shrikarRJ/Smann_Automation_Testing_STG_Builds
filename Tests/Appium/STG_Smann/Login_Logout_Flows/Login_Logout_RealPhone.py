@@ -24,7 +24,7 @@ DEVICE_UDID = "emulator-5554"
 # emulator-5554
 
 # APK_PATH = "C:\\Users\\shrik\\OneDrive\\Desktop\\Smann_Automation_Testing_STG_Builds\\Tests\\STG_Smann\\Smann_STG_APK\\STG_Smann.apk"
-APK_PATH = os.environ.get("APK_PATH", r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\STG_Smann\Smann_STG_APK\STG_Smann.apk")
+APK_PATH = os.environ.get("APK_PATH", r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\Appium\STG_Smann\Smann_STG_APK\STG_Smann.apk")
 APP_PACKAGE = "com.tribetayling.customer.staging"
 APP_ACTIVITY = "com.tribetayling.customer.MainActivity"
 
