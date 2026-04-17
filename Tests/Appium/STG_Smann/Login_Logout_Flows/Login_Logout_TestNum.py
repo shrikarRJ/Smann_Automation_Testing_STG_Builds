@@ -62,6 +62,16 @@ def safe_click(by, value, timeout=5):
 # Helper: Handle Permission Popups
 # ------------------------------------------
 def handle_permissions():
+    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Enable Location", 5):
+        safe_click(
+            AppiumBy.ID,
+            "com.android.permissioncontroller:id/permission_allow_foreground_only_button",
+            5
+        )
+
+    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Enable Notification", 5):
+        safe_click(AppiumBy.ID, "com.android.permissioncontroller:id/permission_allow_button", 5)
+
     safe_click(AppiumBy.ID, "com.android.permissioncontroller:id/permission_allow_button", 3)
     safe_click(AppiumBy.ID, "com.android.permissioncontroller:id/permission_allow_foreground_only_button", 3)
 
@@ -69,6 +79,8 @@ def handle_permissions():
 # Helper: Handle Intro Templates
 # ------------------------------------------
 def handle_intro_templates():
+    handle_permissions()
+
     if safe_click(AppiumBy.ACCESSIBILITY_ID, "Got it! Thanks", 5):
         print("✅ Clicked 'Got it! Thanks'")
         return
@@ -159,15 +171,18 @@ def enter_otp_safely(otp):
             os.system(f'adb -s {DEVICE_UDID} shell input text {otp}')
             print(f"⌨️ Fixed OTP typed via ADB (attempt {attempt})")
 
+            if not safe_click(AppiumBy.ACCESSIBILITY_ID, "Verify", 5):
+                print(f"⚠️ Verify button not found after OTP entry (attempt {attempt})")
+
             # Wait for next screen indicator
             try:
                 WebDriverWait(driver, 15).until(
                     EC.any_of(
+                        EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Enable Location")),
+                        EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Enable Notification")),
                         EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Got it! Thanks")),
+                        EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Profile")),
                         EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Order Now")),
-                        EC.presence_of_element_located(
-                            (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.ImageView")')
-                        )
                     )
                 )
                 print(f"✅ OTP accepted, moved to next screen (attempt {attempt})")
@@ -200,11 +215,7 @@ handle_intro_templates()
 # Profile / Menu Icon
 # ------------------------------------------
 try:
-    profile_icon = wait.until(
-        EC.presence_of_element_located(
-            (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.ImageView").instance(13)')
-        )
-    )
+    profile_icon = wait.until(EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Profile")))
     profile_icon.click()
 except TimeoutException:
     print("ℹ️ Profile icon not found, continuing anyway ")

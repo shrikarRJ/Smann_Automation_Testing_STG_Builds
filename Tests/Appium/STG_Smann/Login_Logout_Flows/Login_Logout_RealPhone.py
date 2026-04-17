@@ -13,12 +13,15 @@ import time
 import subprocess
 import re
 import os
+import shutil
+import urllib.request
+import urllib.error
 
 # ------------------------------------------
 # CONFIG
 # ------------------------------------------
 PHONE_NUMBER = "9021004607"
-DEVICE_UDID = "emulator-5554"
+DEVICE_UDID = "ZA222KCFFQ"
 
 # ZA222KCFFQ
 # emulator-5554
@@ -27,28 +30,101 @@ DEVICE_UDID = "emulator-5554"
 APK_PATH = os.environ.get("APK_PATH", r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\Appium\STG_Smann\Smann_STG_APK\STG_Smann.apk")
 APP_PACKAGE = "com.tribetayling.customer.staging"
 APP_ACTIVITY = "com.tribetayling.customer.MainActivity"
+APPIUM_SERVER_URL = os.environ.get("APPIUM_SERVER_URL", "http://127.0.0.1:4723")
+APPIUM_START_TIMEOUT = 20
+
+appium_process = None
+
+
+def run_adb_command(args, capture_output=True, check=True):
+    cmd = ["adb", "-s", DEVICE_UDID, *args]
+    return subprocess.run(
+        cmd,
+        capture_output=capture_output,
+        text=True,
+        check=check
+    )
 
 # ------------------------------------------
 # Helper: Check & Install App if Missing
 # ------------------------------------------
+def ensure_device_connected():
+    result = subprocess.run(
+        ["adb", "devices"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    connected_devices = []
+    for line in result.stdout.splitlines():
+        if "\tdevice" in line:
+            connected_devices.append(line.split("\t")[0].strip())
+
+    if DEVICE_UDID not in connected_devices:
+        raise RuntimeError(
+            f"❌ Device '{DEVICE_UDID}' not detected by adb. Connected devices: {connected_devices or 'none'}"
+        )
+
+
 def ensure_app_installed():
-    cmd = f'adb -s {DEVICE_UDID} shell pm list packages | findstr {APP_PACKAGE}'
-    result = subprocess.getoutput(cmd)
+    result = run_adb_command(["shell", "pm", "list", "packages"], capture_output=True).stdout
 
     if APP_PACKAGE not in result:
         print("📦 App not found on device. Installing APK...")
-        install_cmd = f'adb -s {DEVICE_UDID} install -r "{APK_PATH}"'
-        os.system(install_cmd)
+        subprocess.run(["adb", "-s", DEVICE_UDID, "install", "-r", APK_PATH], check=True)
         print("✅ App installed")
     else:
         print("✅ App already installed on device")
+
+
+def is_appium_server_running():
+    try:
+        with urllib.request.urlopen(f"{APPIUM_SERVER_URL}/status", timeout=2) as response:
+            return response.status == 200
+    except (urllib.error.URLError, TimeoutError, ConnectionError):
+        return False
+
+
+def start_appium_server_if_needed():
+    global appium_process
+
+    if is_appium_server_running():
+        print(f"✅ Appium server already running at {APPIUM_SERVER_URL}")
+        return
+
+    appium_binary = shutil.which("appium.cmd") or shutil.which("appium")
+    if not appium_binary:
+        raise RuntimeError(
+            "❌ Appium server is not running on http://127.0.0.1:4723 and the 'appium' command was not found in PATH."
+        )
+
+    print("🚀 Appium server not running. Starting it automatically...")
+    appium_process = subprocess.Popen(
+        [appium_binary, "--address", "127.0.0.1", "--port", "4723"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    end_time = time.time() + APPIUM_START_TIMEOUT
+    while time.time() < end_time:
+        if is_appium_server_running():
+            print(f"✅ Appium server started at {APPIUM_SERVER_URL}")
+            return
+        time.sleep(1)
+
+    raise RuntimeError(
+        f"❌ Appium server did not start within {APPIUM_START_TIMEOUT} seconds. Please check Appium installation/logs."
+    )
 
 # ------------------------------------------
 # Helper: Get latest SMS timestamp BEFORE requesting OTP
 # ------------------------------------------
 def get_latest_sms_date():
-    cmd = 'adb shell content query --uri content://sms/inbox --projection date'
-    result = subprocess.check_output(cmd, shell=True, text=True, errors="ignore")
+    result = run_adb_command(
+        ["shell", "content", "query", "--uri", "content://sms/inbox", "--projection", "date"],
+        capture_output=True
+    ).stdout
 
     dates = re.findall(r'date=(\d+)', result)
     if not dates:
@@ -65,8 +141,10 @@ def fetch_otp_from_sms(last_seen_date, max_wait_seconds=120, poll_interval=5):
     start_time = time.time()
 
     while time.time() - start_time < max_wait_seconds:
-        cmd = 'adb shell content query --uri content://sms/inbox --projection address,body,date'
-        result = subprocess.check_output(cmd, shell=True, text=True, errors="ignore")
+        result = run_adb_command(
+            ["shell", "content", "query", "--uri", "content://sms/inbox", "--projection", "address,body,date"],
+            capture_output=True
+        ).stdout
 
         rows = result.split("Row:")
 
@@ -111,7 +189,16 @@ def safe_click(by, value, timeout=5):
 # Helper: Handle Permission Popups
 # ------------------------------------------
 def handle_permissions():
-    # Notification / location / etc.
+    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Enable Location", 5):
+        safe_click(
+            AppiumBy.ID,
+            "com.android.permissioncontroller:id/permission_allow_foreground_only_button",
+            5
+        )
+
+    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Enable Notification", 5):
+        safe_click(AppiumBy.ID, "com.android.permissioncontroller:id/permission_allow_button", 5)
+
     safe_click(AppiumBy.ID, "com.android.permissioncontroller:id/permission_allow_button", 3)
     safe_click(AppiumBy.ID, "com.android.permissioncontroller:id/permission_allow_foreground_only_button", 3)
 
@@ -119,6 +206,8 @@ def handle_permissions():
 # Helper: Handle Intro Templates (Got it / Order Now)
 # ------------------------------------------
 def handle_intro_templates():
+    handle_permissions()
+
     if safe_click(AppiumBy.ACCESSIBILITY_ID, "Got it! Thanks", 5):
         print("✅ Clicked 'Got it! Thanks'")
         return
@@ -133,7 +222,9 @@ def handle_intro_templates():
 # ------------------------------------------
 # Ensure App Installed
 # ------------------------------------------
+ensure_device_connected()
 ensure_app_installed()
+start_appium_server_if_needed()
 
 # ------------------------------------------
 # Desired Capabilities (REAL DEVICE)
@@ -156,7 +247,7 @@ options.load_capabilities({
 # ------------------------------------------
 # Driver Initialization
 # ------------------------------------------
-driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
+driver = webdriver.Remote(APPIUM_SERVER_URL, options=options)
 wait = WebDriverWait(driver, 40)
 
 print("✅ App launched successfully")
@@ -227,6 +318,9 @@ def enter_otp_safely(otp):
             os.system(f'adb -s {DEVICE_UDID} shell input text {otp}')
             print(f"⌨️ OTP typed via ADB (attempt {attempt})")
 
+            if not safe_click(AppiumBy.ACCESSIBILITY_ID, "Verify", 5):
+                print(f"⚠️ Verify button not found after OTP entry (attempt {attempt})")
+
             # 🔑 NOW: Do NOT check the field text
             # Instead, wait for next screen indicator
 
@@ -234,9 +328,11 @@ def enter_otp_safely(otp):
                 # Example: wait for "Got it! Thanks" OR Profile icon OR any home element
                 WebDriverWait(driver, 15).until(
                     EC.any_of(
+                        EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Enable Location")),
+                        EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Enable Notification")),
                         EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Got it! Thanks")),
+                        EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Profile")),
                         EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Order Now")),
-                        EC.presence_of_element_located((AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.ImageView")'))
                     )
                 )
                 print(f"✅ OTP accepted, moved to next screen (attempt {attempt})")
@@ -269,11 +365,7 @@ handle_intro_templates()
 # Profile / Menu Icon
 # ------------------------------------------
 try:
-    profile_icon = wait.until(
-        EC.presence_of_element_located(
-            (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().className("android.widget.ImageView").instance(13)')
-        )
-    )
+    profile_icon = wait.until(EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Profile")))
     profile_icon.click()
 except TimeoutException:
     print("ℹ️ Profile icon not found, continuing anyway")
