@@ -30,7 +30,7 @@ FIXED_OTP = "1234"
 
 APK_PATH = os.environ.get(
     "APK_PATH",
-    r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\STG_Partner\STG_Partner_Apk\STG_Partner.apk"
+    r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\Appium\STG_Partner\STG_Partner_Apk\STG_Partner.apk"
 )
 APP_PACKAGE = "com.tribetayling.vendor.staging"
 APP_ACTIVITY = "com.tribetayling.vendor.MainActivity"

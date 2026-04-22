@@ -32,7 +32,7 @@ LANDMARK_TEXT = "near railway station"
 
 DEVICE_UDID = "emulator-5554"
 
-APK_PATH = r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\STG_Partner\STG_Partner_Apk\STG_Partner.apk"
+APK_PATH = r"C:\Users\shrik\OneDrive\Desktop\Smann_Automation_Testing_STG_Builds\Tests\Appium\STG_Partner\STG_Partner_Apk\STG_Partner.apk"
 
 APP_PACKAGE = "com.tribetayling.vendor.staging"
 APP_ACTIVITY = "com.tribetayling.vendor.MainActivity"

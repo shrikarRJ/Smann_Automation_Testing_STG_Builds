@@ -17,7 +17,7 @@ options.load_capabilities({
 	"platformName": "Android",
 	"appium:automationName": "UiAutomator2",
 	"appium:deviceName": "emulator-5554",
-	"appium:app": "C:\\Users\\shrik\\OneDrive\\Desktop\\Smann_Automation_Testing_STG_Builds\\Tests\\STG_Partner\\STG_Partner_Apk\\STG_Partner.apk",
+	"appium:app": "C:\\Users\\shrik\\OneDrive\\Desktop\\Smann_Automation_Testing_STG_Builds\\Tests\\Appium\\STG_Partner\\STG_Partner_Apk\\STG_Partner.apk",
 	"appium:appPackage": "com.tribetayling.vendor.staging",
 	"appium:appActivity": "com.tribetayling.vendor.MainActivity",
 	"appium:fullReset": True,
