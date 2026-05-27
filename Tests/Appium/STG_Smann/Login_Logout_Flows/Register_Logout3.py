@@ -22,7 +22,10 @@ DELIVERY_LOCATION_RESULT = (
     "Khopoli ST Stand, Khopoli ST Bus Stand, Laxminagar, Khopoli, Maharashtra, India"
 )
 
-DEVICE_UDID = "emulator-5554"
+DEVICE_UDID = "ZA222KCFFQ"
+
+# ZA222KCFFQ
+# emulator-5554
 
 APK_PATH = os.environ.get(
     "APK_PATH",
@@ -38,6 +41,18 @@ OTP_VERIFY_TIMEOUT = 12
 POST_OTP_STATE_TIMEOUT = 20
 SHORT_WAIT = 3
 LOCATION_CONFIRM_TIMEOUT = 15
+PHONE_ENTRY_ATTEMPT_MAX = 3
+PHONE_TO_OTP_TIMEOUT = 8
+WAIT_POLL_INTERVAL = 0.2
+FAST_CHECK_TIMEOUT = 0.8
+STATE_CHECK_TIMEOUT = 1.5
+PERMISSION_WAIT_TIMEOUT = 1.2
+UI_SETTLE_DELAY = 0.2
+FIELD_RETRY_DELAY = 0.3
+FLOW_SETTLE_DELAY = 0.4
+INTRO_WAIT_TIMEOUT = 1.0
+PROFILE_WAIT_TIMEOUT = 6
+SEARCH_RESULT_TIMEOUT = 8
 
 driver = None
 wait = None
@@ -82,9 +97,34 @@ def reset_app_storage():
 # ------------------------------------------
 # Helper: Element access
 # ------------------------------------------
+def build_wait(timeout):
+    return WebDriverWait(
+        driver,
+        timeout,
+        poll_frequency=WAIT_POLL_INTERVAL,
+        ignored_exceptions=(StaleElementReferenceException,),
+    )
+
+
+def get_first_element(by, value, displayed_only=False):
+    try:
+        elements = driver.find_elements(by, value)
+    except Exception:
+        return None
+
+    for element in elements:
+        try:
+            if not displayed_only or element.is_displayed():
+                return element
+        except StaleElementReferenceException:
+            continue
+
+    return None
+
+
 def safe_click(by, value, timeout=5):
     try:
-        element = WebDriverWait(driver, timeout).until(
+        element = build_wait(timeout).until(
             EC.element_to_be_clickable((by, value))
         )
         element.click()
@@ -93,22 +133,37 @@ def safe_click(by, value, timeout=5):
         return False
 
 
-def is_present(by, value, timeout=2):
-    try:
-        WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((by, value))
-        )
-        return True
-    except TimeoutException:
-        return False
+def click_if_present(by, value, timeout=FAST_CHECK_TIMEOUT):
+    element = get_first_element(by, value, displayed_only=True)
+    if element is not None:
+        try:
+            element.click()
+            return True
+        except Exception:
+            pass
+
+    return safe_click(by, value, timeout)
+
+
+def is_present(by, value, timeout=FAST_CHECK_TIMEOUT):
+    end_time = time.perf_counter() + max(timeout, 0)
+
+    while True:
+        if get_first_element(by, value) is not None:
+            return True
+
+        if timeout <= 0 or time.perf_counter() >= end_time:
+            return False
+
+        time.sleep(WAIT_POLL_INTERVAL)
 
 
 def get_first_present_locator(locator_groups, timeout=POST_OTP_STATE_TIMEOUT):
-    end_time = time.time() + timeout
+    end_time = time.perf_counter() + timeout
 
-    while time.time() < end_time:
+    while time.perf_counter() < end_time:
         for label, by, value in locator_groups:
-            if is_present(by, value, 1):
+            if is_present(by, value, 0):
                 return label, by, value
 
         if has_home_address_card():
@@ -118,13 +173,13 @@ def get_first_present_locator(locator_groups, timeout=POST_OTP_STATE_TIMEOUT):
                 'new UiSelector().descriptionStartsWith("Home")',
             )
 
-        time.sleep(1)
+        time.sleep(WAIT_POLL_INTERVAL)
 
     raise TimeoutException("Timed out waiting for the expected registration state")
 
 
 def get_edit_text(index, timeout=10):
-    return WebDriverWait(driver, timeout).until(
+    return build_wait(timeout).until(
         EC.presence_of_element_located(
             (
                 AppiumBy.ANDROID_UIAUTOMATOR,
@@ -134,21 +189,53 @@ def get_edit_text(index, timeout=10):
     )
 
 
+def get_visible_edit_texts_now():
+    elements = driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
+    visible = []
+
+    for element in elements:
+        try:
+            if element.is_displayed():
+                visible.append(element)
+        except StaleElementReferenceException:
+            continue
+
+    return visible
+
+
 def get_visible_edit_texts(timeout=10, min_count=1):
     def _visible_inputs(_driver):
-        elements = _driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
-        visible = [element for element in elements if element.is_displayed()]
+        visible = get_visible_edit_texts_now()
         return visible if len(visible) >= min_count else False
 
-    return WebDriverWait(driver, timeout).until(_visible_inputs)
+    return build_wait(timeout).until(_visible_inputs)
+
+
+def get_visible_edit_texts_count(timeout=10, min_count=1):
+    return len(get_visible_edit_texts(timeout=timeout, min_count=min_count))
 
 
 def has_home_address_card():
-    cards = driver.find_elements(
-        AppiumBy.ANDROID_UIAUTOMATOR,
-        'new UiSelector().descriptionStartsWith("Home")',
+    return (
+        get_first_element(
+            AppiumBy.ANDROID_UIAUTOMATOR,
+            'new UiSelector().descriptionStartsWith("Home")',
+        )
+        is not None
     )
-    return len(cards) > 0
+
+
+def log_duration(label, started_at):
+    print(f"⏱️ {label}: {time.perf_counter() - started_at:.2f}s")
+
+
+def read_field_value(field):
+    return (
+        field.get_attribute("text")
+        or field.get_attribute("contentDescription")
+        or field.text
+        or ""
+    ).strip()
 
 
 def log_screen_state(label):
@@ -177,36 +264,50 @@ def log_screen_state(label):
 # Helper: Permissions / intro
 # ------------------------------------------
 def handle_permissions():
-    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Enable Location", 5):
+    handled = False
+
+    if click_if_present(AppiumBy.ACCESSIBILITY_ID, "Enable Location", PERMISSION_WAIT_TIMEOUT):
+        handled = True
         safe_click(
             AppiumBy.ID,
             "com.android.permissioncontroller:id/permission_allow_foreground_only_button",
-            5,
+            PERMISSION_WAIT_TIMEOUT,
         )
 
-    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Enable Notification", 5):
+    if click_if_present(
+        AppiumBy.ACCESSIBILITY_ID,
+        "Enable Notification",
+        PERMISSION_WAIT_TIMEOUT,
+    ):
+        handled = True
         safe_click(
             AppiumBy.ID,
             "com.android.permissioncontroller:id/permission_allow_button",
-            5,
+            PERMISSION_WAIT_TIMEOUT,
         )
 
-    safe_click(AppiumBy.ID, "com.android.permissioncontroller:id/permission_allow_button", 3)
-    safe_click(
-        AppiumBy.ID,
-        "com.android.permissioncontroller:id/permission_allow_foreground_only_button",
-        3,
-    )
+    for by, value in (
+        (
+            AppiumBy.ID,
+            "com.android.permissioncontroller:id/permission_allow_button",
+        ),
+        (
+            AppiumBy.ID,
+            "com.android.permissioncontroller:id/permission_allow_foreground_only_button",
+        ),
+    ):
+        if click_if_present(by, value, PERMISSION_WAIT_TIMEOUT):
+            handled = True
+
+    return handled
 
 
 def handle_intro_templates():
-    handle_permissions()
-
-    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Got it! Thanks", 5):
+    if click_if_present(AppiumBy.ACCESSIBILITY_ID, "Got it! Thanks", INTRO_WAIT_TIMEOUT):
         print("✅ Clicked 'Got it! Thanks'")
         return True
 
-    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Order Now", 5):
+    if click_if_present(AppiumBy.ACCESSIBILITY_ID, "Order Now", INTRO_WAIT_TIMEOUT):
         print("✅ Clicked 'Order Now'")
         return True
 
@@ -217,19 +318,36 @@ def handle_intro_templates():
 # Helper: Login / OTP
 # ------------------------------------------
 def enter_mobile_number():
-    mobile_input = wait.until(
-        EC.presence_of_element_located((AppiumBy.CLASS_NAME, "android.widget.EditText"))
-    )
-    mobile_input.click()
-    mobile_input.clear()
-    mobile_input.send_keys(PHONE_NUMBER)
+    print("📲 Entering phone number and waiting for OTP screen...")
+    started_at = time.perf_counter()
 
-    continue_button = wait.until(
-        EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Continue"))
-    )
-    continue_button.click()
+    for attempt in range(1, PHONE_ENTRY_ATTEMPT_MAX + 1):
+        mobile_input = wait.until(
+            EC.element_to_be_clickable((AppiumBy.CLASS_NAME, "android.widget.EditText"))
+        )
+        mobile_input.click()
+        mobile_input.clear()
+        mobile_input.send_keys(PHONE_NUMBER)
 
-    print("📲 Registration number entered, proceeding with fixed OTP...")
+        continue_button = wait.until(
+            EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Continue"))
+        )
+        continue_button.click()
+
+        state = wait_for_phone_to_otp_transition()
+        if state == "otp":
+            print(f"✅ OTP screen opened after phone entry (attempt {attempt})")
+            log_duration("Phone number entry", started_at)
+            return
+
+        print(
+            f"⚠️ App returned to phone entry state after clicking Continue (attempt {attempt})"
+        )
+        log_screen_state(f"phone entry retry {attempt}")
+        handle_permissions()
+        time.sleep(FIELD_RETRY_DELAY)
+
+    raise TimeoutException("Phone number entry did not advance to OTP screen")
 
 
 def find_and_click_verify_button():
@@ -243,12 +361,41 @@ def find_and_click_verify_button():
         ),
     )
 
-    for label, by, value in selectors:
-        if safe_click(by, value, OTP_VERIFY_TIMEOUT):
-            print(f"✅ Verify button clicked via {label}")
-            return True
+    end_time = time.perf_counter() + OTP_VERIFY_TIMEOUT
+
+    while time.perf_counter() < end_time:
+        for label, by, value in selectors:
+            if click_if_present(by, value, 0):
+                print(f"✅ Verify button clicked via {label}")
+                return True
+
+        time.sleep(WAIT_POLL_INTERVAL)
 
     return False
+
+
+def wait_for_phone_to_otp_transition(timeout=PHONE_TO_OTP_TIMEOUT):
+    end_time = time.perf_counter() + timeout
+
+    while time.perf_counter() < end_time:
+        if is_present(AppiumBy.ACCESSIBILITY_ID, "Verify", 0):
+            return "otp"
+
+        if is_present(
+            AppiumBy.ANDROID_UIAUTOMATOR,
+            'new UiSelector().text("Verify")',
+            0,
+        ):
+            return "otp"
+
+        if is_present(AppiumBy.ACCESSIBILITY_ID, "Continue", 0) and len(
+            get_visible_edit_texts_now()
+        ) == 1:
+            return "phone"
+
+        time.sleep(WAIT_POLL_INTERVAL)
+
+    return "unknown"
 
 
 def wait_for_post_otp_state():
@@ -271,44 +418,50 @@ def wait_for_post_otp_state():
 
 def enter_otp_safely(otp):
     print("✍️ Entering fixed OTP safely...")
+    started_at = time.perf_counter()
 
     for attempt in range(1, OTP_ATTEMPT_MAX + 1):
         try:
             driver.activate_app(APP_PACKAGE)
-            time.sleep(1)
+            time.sleep(UI_SETTLE_DELAY)
 
             otp_input = wait.until(
-                EC.presence_of_element_located((AppiumBy.CLASS_NAME, "android.widget.EditText"))
+                EC.element_to_be_clickable((AppiumBy.CLASS_NAME, "android.widget.EditText"))
             )
             otp_input.click()
-            time.sleep(1)
+            time.sleep(UI_SETTLE_DELAY)
 
             try:
                 otp_input.clear()
             except Exception:
                 pass
 
-            time.sleep(1)
             run_adb_command(["shell", "input", "text", otp])
-            time.sleep(2)
-            print(f"⌨️ Fixed OTP typed via ADB (attempt {attempt})")
+            time.sleep(UI_SETTLE_DELAY)
+            field_value = read_field_value(otp_input)
+            print(
+                f"⌨️ Fixed OTP typed via ADB (attempt {attempt}) | "
+                f"field snapshot: {field_value or '<masked/empty>'}"
+            )
             log_screen_state(f"after OTP entry attempt {attempt}")
 
             if not find_and_click_verify_button():
                 print(f"⚠️ Verify button not found after OTP entry (attempt {attempt})")
                 log_screen_state("verify button not found")
-                time.sleep(SHORT_WAIT)
+                time.sleep(FIELD_RETRY_DELAY)
                 continue
 
-            time.sleep(2)
-            wait_for_post_otp_state()
+            label = wait_for_post_otp_state()
+            if label == "profile screen" or label == "home screen":
+                print("✅ OTP flow completed to logged-in state")
+            log_duration("OTP verification flow", started_at)
             return True
 
         except Exception as error:
             print(f"⚠️ Error while entering OTP (attempt {attempt}): {error}")
             log_screen_state(f"OTP attempt {attempt} failed")
 
-        time.sleep(SHORT_WAIT)
+        time.sleep(FIELD_RETRY_DELAY)
 
     raise Exception("❌ Failed to move past OTP screen after multiple attempts")
 
@@ -317,7 +470,15 @@ def enter_otp_safely(otp):
 # Helper: Registration flow
 # ------------------------------------------
 def fill_name():
-    name_input = get_edit_text(0)
+    started_at = time.perf_counter()
+    name_input = wait.until(
+        EC.element_to_be_clickable(
+            (
+                AppiumBy.ANDROID_UIAUTOMATOR,
+                'new UiSelector().className("android.widget.EditText").instance(0)',
+            )
+        )
+    )
     name_input.click()
     name_input.clear()
     name_input.send_keys(CUSTOMER_NAME)
@@ -327,21 +488,10 @@ def fill_name():
     next_button = wait.until(EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Next")))
     next_button.click()
     print("✅ Name entered successfully")
+    log_duration("Customer name entry", started_at)
 
 
-def select_delivery_location():
-    print(f"📍 Searching delivery location: {DELIVERY_LOCATION_QUERY}")
-
-    safe_click(AppiumBy.ACCESSIBILITY_ID, "Enter location manually", 5)
-
-    search_box = WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((AppiumBy.CLASS_NAME, "android.widget.EditText"))
-    )
-    search_box.click()
-    search_box.clear()
-    search_box.send_keys(DELIVERY_LOCATION_QUERY)
-    time.sleep(2)
-
+def click_delivery_location_result():
     result_selectors = (
         ("exact accessibility id", AppiumBy.ACCESSIBILITY_ID, DELIVERY_LOCATION_RESULT),
         (
@@ -356,11 +506,14 @@ def select_delivery_location():
         ),
     )
 
-    for label, by, value in result_selectors:
-        if safe_click(by, value, 10):
-            print(f"✅ Selected delivery location via {label}: {DELIVERY_LOCATION_RESULT}")
-            break
-    else:
+    end_time = time.perf_counter() + SEARCH_RESULT_TIMEOUT
+
+    while time.perf_counter() < end_time:
+        for label, by, value in result_selectors:
+            if click_if_present(by, value, 0):
+                print(f"✅ Selected delivery location via {label}: {DELIVERY_LOCATION_RESULT}")
+                return True
+
         suggestions = driver.find_elements(AppiumBy.XPATH, "//*[@text or @content-desc]")
         for suggestion in suggestions:
             try:
@@ -379,20 +532,39 @@ def select_delivery_location():
             try:
                 suggestion.click()
                 print(f"✅ Selected delivery location from visible suggestions: {description}")
-                break
+                return True
             except StaleElementReferenceException:
                 continue
-        else:
-            print("⚠️ Delivery location result for Bus stand Khopoli was not found")
-            return False
 
-    confirm_button = WebDriverWait(driver, LOCATION_CONFIRM_TIMEOUT).until(
+        time.sleep(WAIT_POLL_INTERVAL)
+
+    return False
+
+
+def select_delivery_location():
+    print(f"📍 Searching delivery location: {DELIVERY_LOCATION_QUERY}")
+    started_at = time.perf_counter()
+
+    click_if_present(AppiumBy.ACCESSIBILITY_ID, "Enter location manually", INTRO_WAIT_TIMEOUT)
+
+    search_box = build_wait(SEARCH_RESULT_TIMEOUT).until(
+        EC.element_to_be_clickable((AppiumBy.CLASS_NAME, "android.widget.EditText"))
+    )
+    search_box.click()
+    search_box.clear()
+    search_box.send_keys(DELIVERY_LOCATION_QUERY)
+
+    if not click_delivery_location_result():
+        print("⚠️ Delivery location result for Bus stand Khopoli was not found")
+        return False
+
+    confirm_button = build_wait(LOCATION_CONFIRM_TIMEOUT).until(
         EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Confirm Location"))
     )
     confirm_button.click()
     print("✅ Confirmed delivery location")
 
-    WebDriverWait(driver, LOCATION_CONFIRM_TIMEOUT).until(
+    build_wait(LOCATION_CONFIRM_TIMEOUT).until(
         EC.any_of(
             EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Confirm Address")),
             EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Next")),
@@ -400,11 +572,13 @@ def select_delivery_location():
             EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Profile")),
         )
     )
+    log_duration("Delivery location selection", started_at)
     return True
 
 
 def fill_two_line_address(line_1, line_2, label):
-    WebDriverWait(driver, LOCATION_CONFIRM_TIMEOUT).until(
+    started_at = time.perf_counter()
+    build_wait(LOCATION_CONFIRM_TIMEOUT).until(
         EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Confirm Address"))
     )
 
@@ -417,18 +591,12 @@ def fill_two_line_address(line_1, line_2, label):
         for attempt in range(1, 4):
             try:
                 field.click()
-                time.sleep(1)
+                time.sleep(UI_SETTLE_DELAY)
                 field.clear()
-                time.sleep(1)
                 field.send_keys(value)
-                time.sleep(1)
+                time.sleep(UI_SETTLE_DELAY)
 
-                entered_value = (
-                    field.get_attribute("text")
-                    or field.get_attribute("contentDescription")
-                    or field.text
-                    or ""
-                ).strip()
+                entered_value = read_field_value(field)
 
                 if value in entered_value or entered_value == value:
                     print(f"✅ {field_label} entered: {entered_value}")
@@ -444,7 +612,7 @@ def fill_two_line_address(line_1, line_2, label):
             except Exception as error:
                 print(f"⚠️ Error entering {field_label} on attempt {attempt}: {error}")
 
-            time.sleep(1)
+            time.sleep(FIELD_RETRY_DELAY)
 
         raise TimeoutException(f"Failed to enter value for {field_label}")
 
@@ -452,17 +620,18 @@ def fill_two_line_address(line_1, line_2, label):
     type_and_verify(second_input, line_2, "Tower / Building Name")
 
     driver.execute_script("mobile:pressKey", {"keycode": 4})
-    time.sleep(1)
+    time.sleep(UI_SETTLE_DELAY)
 
     confirm_address = wait.until(
         EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Confirm Address"))
     )
     confirm_address.click()
     print(f"✅ {label} entered successfully")
+    log_duration("Address details entry", started_at)
 
 
 def open_add_address_if_needed():
-    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Add Address", 3):
+    if click_if_present(AppiumBy.ACCESSIBILITY_ID, "Add Address", FAST_CHECK_TIMEOUT):
         print("✅ Clicked 'Add Address'")
         return True
 
@@ -473,10 +642,30 @@ def open_add_address_if_needed():
         )[0]
         home_card.click()
         print("✅ Opened address chooser")
-        safe_click(AppiumBy.ACCESSIBILITY_ID, "Add Address", 5)
+        safe_click(AppiumBy.ACCESSIBILITY_ID, "Add Address", INTRO_WAIT_TIMEOUT)
         return True
 
     return False
+
+
+def detect_registration_state(timeout=STATE_CHECK_TIMEOUT):
+    locator_groups = (
+        ("delivery location", AppiumBy.ACCESSIBILITY_ID, "Confirm Delivery Location"),
+        ("location permission", AppiumBy.ACCESSIBILITY_ID, "Enable Location"),
+        ("notification permission", AppiumBy.ACCESSIBILITY_ID, "Enable Notification"),
+        ("name step", AppiumBy.ACCESSIBILITY_ID, "Next"),
+        ("address form", AppiumBy.ACCESSIBILITY_ID, "Confirm Address"),
+        ("address add button", AppiumBy.ACCESSIBILITY_ID, "Add Address"),
+        ("intro screen", AppiumBy.ACCESSIBILITY_ID, "Got it! Thanks"),
+        ("home screen", AppiumBy.ACCESSIBILITY_ID, "Order Now"),
+        ("profile screen", AppiumBy.ACCESSIBILITY_ID, "Profile"),
+    )
+
+    try:
+        label, _, _ = get_first_present_locator(locator_groups, timeout=timeout)
+        return label
+    except TimeoutException:
+        return None
 
 
 def finish_registration():
@@ -484,35 +673,31 @@ def finish_registration():
     name_done = False
     address_details_done = False
 
-    for _ in range(10):
-        handle_permissions()
+    for _ in range(12):
+        if handle_permissions():
+            time.sleep(FLOW_SETTLE_DELAY)
+            continue
 
-        if is_present(AppiumBy.ACCESSIBILITY_ID, "Profile", 3):
+        state = detect_registration_state()
+
+        if state == "profile screen":
             print("✅ Registration flow reached profile/home state")
             return
 
-        if not delivery_location_done and is_present(
-            AppiumBy.ACCESSIBILITY_ID, "Confirm Delivery Location", 3
-        ):
+        if state == "delivery location" and not delivery_location_done:
             if not select_delivery_location():
                 log_screen_state("delivery location suggestion missing")
                 raise Exception("❌ Delivery location suggestions were not available")
             delivery_location_done = True
-            time.sleep(2)
+            time.sleep(FLOW_SETTLE_DELAY)
             continue
 
-        if delivery_location_done and not is_present(
-            AppiumBy.ACCESSIBILITY_ID, "Confirm Address", 1
-        ) and is_present(
-            AppiumBy.ACCESSIBILITY_ID, "Confirm Delivery Location", 2
-        ):
+        if state == "delivery location" and delivery_location_done:
             print("⏳ Waiting for delivery location screen to transition after confirmation...")
-            time.sleep(2)
+            time.sleep(FIELD_RETRY_DELAY)
             continue
 
-        if not address_details_done and is_present(
-            AppiumBy.ACCESSIBILITY_ID, "Confirm Address", 3
-        ):
+        if state == "address form" and not address_details_done:
             print("📝 Address detail form detected")
             fill_two_line_address(
                 ADDRESS_LINE_1,
@@ -520,29 +705,29 @@ def finish_registration():
                 "address details",
             )
             address_details_done = True
-            time.sleep(2)
+            time.sleep(FLOW_SETTLE_DELAY)
             continue
 
-        if not address_details_done and open_add_address_if_needed():
-            time.sleep(2)
+        if state in ("address add button", "address chooser") and not address_details_done and open_add_address_if_needed():
+            time.sleep(FLOW_SETTLE_DELAY)
             continue
 
-        if not name_done and is_present(AppiumBy.ACCESSIBILITY_ID, "Next", 3):
+        if state == "name step" and not name_done:
             fill_name()
             name_done = True
-            time.sleep(2)
+            time.sleep(FLOW_SETTLE_DELAY)
             continue
 
-        if handle_intro_templates():
-            time.sleep(2)
+        if state in ("intro screen", "home screen") and handle_intro_templates():
+            time.sleep(FLOW_SETTLE_DELAY)
             continue
 
-        if is_present(AppiumBy.ACCESSIBILITY_ID, "Profile", 3):
+        if state == "profile screen":
             print("✅ Registration flow reached profile/home state")
             return
 
         log_screen_state("unexpected registration state")
-        time.sleep(2)
+        time.sleep(FIELD_RETRY_DELAY)
 
     raise Exception("❌ Registration flow did not reach the home/profile screen")
 
@@ -551,21 +736,21 @@ def finish_registration():
 # Helper: Profile / logout
 # ------------------------------------------
 def open_profile():
-    try:
-        profile_icon = wait.until(
-            EC.element_to_be_clickable((AppiumBy.ACCESSIBILITY_ID, "Profile"))
-        )
-        profile_icon.click()
-    except TimeoutException:
-        fallback_icon = wait.until(
-            EC.element_to_be_clickable(
-                (
-                    AppiumBy.ANDROID_UIAUTOMATOR,
-                    'new UiSelector().className("android.widget.ImageView").instance(8)',
-                )
-            )
-        )
-        fallback_icon.click()
+    started_at = time.perf_counter()
+    if safe_click(AppiumBy.ACCESSIBILITY_ID, "Profile", PROFILE_WAIT_TIMEOUT):
+        log_duration("Profile open", started_at)
+        return
+
+    if safe_click(
+        AppiumBy.ANDROID_UIAUTOMATOR,
+        'new UiSelector().className("android.widget.ImageView").instance(8)',
+        INTRO_WAIT_TIMEOUT,
+    ):
+        log_duration("Profile open", started_at)
+        return
+
+    log_screen_state("profile button not found")
+    raise TimeoutException("Profile button was not available")
 
 
 def logout_user():
@@ -575,7 +760,7 @@ def logout_user():
 
 
 def wait_for_login_entry_state():
-    WebDriverWait(driver, 20).until(
+    build_wait(12).until(
         EC.any_of(
             EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Continue")),
             EC.presence_of_element_located((AppiumBy.CLASS_NAME, "android.widget.EditText")),
@@ -588,12 +773,13 @@ def wait_for_login_entry_state():
 def login_existing_user():
     print("🔐 Starting login flow for the registered user...")
     wait_for_login_entry_state()
+    safe_click(AppiumBy.ACCESSIBILITY_ID, "LogIn", 2)
     handle_permissions()
     enter_mobile_number()
     enter_otp_safely(FIXED_OTP)
     handle_permissions()
     handle_intro_templates()
-    WebDriverWait(driver, 20).until(
+    build_wait(12).until(
         EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Profile"))
     )
     print("✅ User logged back in successfully")
@@ -619,7 +805,7 @@ def delete_profile():
     if not delete_confirmed:
         raise TimeoutException("Delete confirmation button was not available")
 
-    WebDriverWait(driver, 20).until(
+    build_wait(12).until(
         EC.any_of(
             EC.presence_of_element_located((AppiumBy.ACCESSIBILITY_ID, "Continue")),
             EC.presence_of_element_located((AppiumBy.CLASS_NAME, "android.widget.EditText")),
@@ -657,7 +843,8 @@ def main():
     reset_app_storage()
 
     driver = create_driver()
-    wait = WebDriverWait(driver, 40)
+    driver.implicitly_wait(0)
+    wait = build_wait(40)
     print("✅ App launched successfully")
 
     handle_permissions()
