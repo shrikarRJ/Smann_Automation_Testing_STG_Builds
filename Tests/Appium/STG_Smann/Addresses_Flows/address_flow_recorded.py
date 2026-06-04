@@ -31,7 +31,7 @@ driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
 
 el36 = driver.find_element(by=AppiumBy.CLASS_NAME, value="android.widget.EditText")
 el36.click()
-el36.send_keys("9999999999")
+el36.send_keys("9999990102")
 el37 = driver.find_element(by=AppiumBy.ACCESSIBILITY_ID, value="Continue")
 el37.click()
 el38 = driver.find_element(by=AppiumBy.CLASS_NAME, value="android.widget.EditText")
