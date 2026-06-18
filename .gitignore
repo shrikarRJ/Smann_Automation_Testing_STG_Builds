@@ -1,0 +1,10 @@
+/.claude/
+/.codex/
+/openspec/
+/.github/
+Smann_STG_APK/
+*.apk
+*.apk
+/Tests/Appium/STG_Smann/Smann_STG_APK
+/Tests/Appium/STG_Smann/Smann_STG_APK
+*.pyc
